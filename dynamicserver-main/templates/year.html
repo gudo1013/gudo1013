@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"/>
+    <title>US Energy Consumption</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="application/javascript">
+        // `year` and total counts for entire US => set these variables equal to appropriate value
+            //  * these variables will be defined and accessible from any script loaded after this one
+            var year = {{{YEAR}}};
+            var coal_count = {{{COAL_COUNT}}};
+            var natural_gas_count = {{{NATURAL_GAS_COUNT}}};
+            var nuclear_count = {{{NUCLEAR_COUNT}}};
+            var petroleum_count = {{{PETROLEUM_COUNT}}};
+            var renewable_count = {{{RENEWABLE_COUNT}}};
+    </script>
+</head>
+
+
+<body>
+    <div class="navigation">
+        
+        <div class="dropdown">
+            <button class="dropbtn">Year</button>
+            <ul class="dropdown-content" id="dropdown-year">
+                
+            </ul>
+            <script>
+                let element = document.getElementById("dropdown-year");
+                for(i=1960; i<2019; i++){
+                    let new_li = document.createElement("li");
+                    let new_link = document.createElement("a")
+                    new_link.textContent = i;
+                    new_link.href = "/year/" + i;
+                    new_li.appendChild(new_link)
+                    element.appendChild(new_li);
+                }
+            </script>
+        </div>
+        <div class="dropdown">
+            <button class="dropbtn">State</button>
+            <ul class="dropdown-content" id="dropdown-state">
+        
+            </ul>
+            <script>
+                let states = ["Alaska", "Alabama", "Arkansas", "Arizona", "California", "Colorado", "Connecticut", "District of Columbia", "Delaware", "Florida", "Georgia", "Hawaii", "Iowa", "Idaho", "Illinois", "Indiana", "Kansas", "Kentucky", "Louisiana", "Massachusetts", "Maryland", "Maine", "Michigan", "Minnesota", "Missouri", "Mississippi", "Montana", "North Carolina", "North Dakota", "Nebraska", "New Hampshire", "New Jersey", "New Mexico", "Nevada", "New York", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Virginia",  "Vermont", "Washington", "Wisconsin", "West Virginia", "Wyoming"]
+                let states_abbrev = [ "AK","AL","AR","AZ","CA","CO","CT","DC","DE","FL","GA","HI","IA","ID","IL","IN","KS","KY","LA","MA","MD","ME","MI","MN","MO","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VA","VT","WA","WI","WV","WY"]
+                let element_state = document.getElementById("dropdown-state");
+                for(i=0; i<51; i++){
+                    let new_li = document.createElement("li");
+                    let new_link = document.createElement("a")
+                    new_link.textContent = states[i];
+                    new_link.href = "/state/" + states_abbrev[i];
+                    new_li.appendChild(new_link)
+                    element_state.appendChild(new_li);
+                }
+            </script>
+        </div>
+        <div class="dropdown">
+            <button class="dropbtn">Energy Source</button>
+            <div class="dropdown-content">
+                <a href="/energy/coal">Coal</a>
+                <a href="/energy/natural_gas">Natural Gas</a>
+                <a href="/energy/nuclear">Nuclear</a>
+                <a href="/energy/petroleum">Petroleum</a>
+                <a href="/energy/renewable">Renewable</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" >
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <script type="application/javascript">
+        //let year = 2001;
+        let myChart = document.getElementById('myChart').getContext('2d');
+        let massPopChart = new Chart(myChart, {
+            type: 'pie', // bar, horizontalBar, pie, line, doughnut, radar, polarArea
+            data: {
+                labels:['Coal', 'Natural', 'Nuclear', 'Petroleum', 'Renewable'],
+                datasets:[{
+                    label:'Total Energy',
+                    data:[
+                        coal_count,
+                        natural_gas_count,
+                        nuclear_count,
+                        petroleum_count,
+                        renewable_count
+                    ],
+                    //backgroundColor: 'blue'
+                    backgroundColor: [
+                        'green', 
+                        'blue',
+                        'yellow',
+                        'red',
+                        'purple'
+                    ]
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true, 
+                        text: 'Total Energy Consumption'
+                    }
+                }
+            }
+        });
+    </script>
+
+    <div class="prevnext">
+            <div id="prev" style="display: inline;">
+
+            </div>
+            <h1 style="padding: 10px;"> Year: {{{YEAR}}}</h1>
+            
+            <div id="next" style="display: inline;">
+
+            </div>
+            <script type='application/javascript'>
+                //seemingly way more complicated than it needed to be but it works
+                let prev = document.getElementById('prev');
+                let next = document.getElementById('next');
+                let prev_value = parseInt(year)-1;
+                let next_value = parseInt(year)+1;
+                if(prev_value < 1960){prev_value = 2018;}
+                if(next_value > 2018){next_value = 1960;}
+                let new_prev = document.createElement("a")
+                let new_next = document.createElement("a")
+                new_prev.href = '/year/' + prev_value;
+                new_next.href = '/year/' + next_value;
+                let prev_button = document.createElement('button');
+                let next_button = document.createElement('button');
+                prev_button.textContent = 'Prev';
+                next_button.textContent = 'Next';
+                new_prev.appendChild(prev_button)
+                new_next.appendChild(next_button)
+                prev.appendChild(new_prev);
+                next.appendChild(new_next);
+            </script>
+        </div>
+    
+    <!-- create template here 
+    <h1> Coal is: {{{COAL_COUNT}}} </h1>
+    <h1> Natural Gas is: {{{NATURAL_GAS_COUNT}}}</h1>
+    <h1>Nuclear is: {{{NUCLEAR_COUNT}}}</h1>
+    <h1>Petroleum is: {{{PETROLEUM_COUNT}}}</h1>
+    <h1>Renewable is: {{{RENEWABLE_COUNT}}}</h1>-->
+
+
+<table>
+
+    <tr>
+        <th>State</th>
+        <th>Coal</th>
+        <th>Natural Gas</th>
+        <th>Nuclear</th>
+        <th>Petroleum</th>
+        <th>Renewable</th>
+        <th>Total</th>
+    </tr>
+    <tr>
+        {{{STATES}}}
+        
+    </tr>
+</table>
+
+</body>
+</html>

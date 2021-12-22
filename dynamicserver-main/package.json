@@ -1,0 +1,31 @@
+{
+    "name": "dynamic-webserver",
+    "version": "0.0.0",
+    "description": "Dynamic Web Server using Node JS",
+    "author": {
+        "name": "Jackson Gudorf",
+        "email": "gudo1013@stthomas.edu"
+    },
+    "contributors": [
+        {
+            "name": "Noah Ponto",
+            "email": "pont7171@stthomas.edu"
+        },
+        {
+            "name": "Jackson Gudorf",
+            "email": "gudo1013@stthomas.edu"
+        }
+    ],
+    "main": "server.js",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/gudo1013/dynamicserver.git"
+    },
+    "dependencies": {
+        "chart.js": "^3.6.0",
+        "express": "^4.17.1",
+        "node.js": "0.0.1-security",
+        "plotly.js-dist": "^2.6.2",
+        "sqlite3": "^5.0.2"
+    }
+}

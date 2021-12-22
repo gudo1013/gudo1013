@@ -1,0 +1,107 @@
+/* Custom CSS Rules */
+
+
+
+
+table, th, td  {
+
+    border: 1px solid black;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 5px;
+
+
+}
+
+.image {
+
+
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 10px;
+    width: 320px;
+    height: 226px;
+
+}
+
+
+
+tr:nth-child(even) {background-color: #f0ebeb;}
+
+
+
+.container {
+
+    height: 25rem;
+    
+}
+
+h1 {
+    display: inline;
+    text-align: center;
+    
+}
+    
+.navigation {
+    width: 100%;
+    background-color: gainsboro;
+    text-align: center;
+}
+
+
+.dropbtn {
+    background-color: green;
+    color: white;
+    padding: 16px;
+    font-size: 16px;
+    border: none;
+    width: 160px;
+}
+
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: lightgray;
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.dropdown-content a {
+    color: black;
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+}
+
+.dropdown-content a:hover {background-color: lightgray;}
+.dropdown:hover .dropdown-content {display: block;}
+.dropdown:hover .dropbtn {background-color: #3e8e41;}
+
+#energy_container {
+    position: relative;
+    height: 700px;
+}
+
+.energy_table{
+    margin:auto;
+    max-width: 1000px;
+    overflow-x: auto;
+}
+
+.prevnext{
+    margin:auto;
+    text-align: center;
+}
