@@ -4,7 +4,8 @@ all: sim.o
 	$(CC) sim.o -o sim
 
 sim.o: sim.c
-	$(CC) -c sim.c -o sim.o
+	$(CC) -c sim.c -o sim.o -ggdb
 
 clean:
 	rm -Rf sim.o sim
+

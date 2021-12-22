@@ -13,59 +13,59 @@
 #define LW 2
 #define SW 3
 #define BEQ 4
-#define JALR 5
+#define JALR 5 /* JALR – not implemented in this project */
 #define HALT 6
 #define NOOP 7
 
 #define NOOPINSTRUCTION 0x1c00000
 
-typedef struct stateStruct {
+typedef struct IFIDstruct{
+	int instr;
+	int pcplus1;
+} IFIDType;
+
+typedef struct IDEXstruct{
+	int instr;
+	int pcplus1;
+	int readregA;
+	int readregB;
+	int offset;
+} IDEXType;
+
+typedef struct EXMEMstruct{
+	int instr;
+	int branchtarget;
+	int aluresult;
+	int readreg;
+} EXMEMType;
+
+typedef struct MEMWBstruct{
+	int instr;
+	int writedata;
+} MEMWBType;
+
+typedef struct WBENDstruct{
+	int instr;
+	int writedata;
+} WBENDType;
+
+typedef struct statestruct{
 	int pc;
-	int mem[NUMMEMORY];
+	int instrmem[NUMMEMORY];
+	int datamem[NUMMEMORY];
 	int reg[NUMREGS];
 	int numMemory;
-	int hits;
-	int misses;
-} stateType;
-
-typedef struct blockStruct {
-	int valid;
-	int dirty;
-	int tag;
-	int lru;
-	int* blockData;
-} blockType;
-
-/*
-* Log the specifics of each cache action.
-*
-* address is the starting word address of the range of data being transferred.
-* size is the size of the range of data being transferred.
-* type specifies the source and destination of the data being transferred.
-*
-* cache_to_processor: reading data from the cache to the processor
-* processor_to_cache: writing data from the processor to the cache
-* memory_to_cache: reading data from the memory to the cache
-* cache_to_memory: evicting cache data by writing it to the memory
-* cache_to_nowhere: evicting cache data by throwing it away
-*/
-enum action_type {cache_to_processor, processor_to_cache, memory_to_cache, cache_to_memory, cache_to_nowhere};
-
-void print_action(int address, int size, enum action_type type)
-{
-	printf("transferring word [%i-%i] ", address, address + size - 1);
-	if (type == cache_to_processor) {
-		printf("from the cache to the processor\n");
-	} else if (type == processor_to_cache) {
-		printf("from the processor to the cache\n");
-	} else if (type == memory_to_cache) {
-		printf("from the memory to the cache\n");
-	} else if (type == cache_to_memory) {
-		printf("from the cache to the memory\n");
-	} else if (type == cache_to_nowhere) {
-		printf("from the cache to nowhere\n");
-	}
-}
+	IFIDType IFID;
+	IDEXType IDEX;
+	EXMEMType EXMEM;
+	MEMWBType MEMWB;
+	WBENDType WBEND;
+	int cycles;       /* Number of cycles run so far */
+	int fetched;     /* Total number of instructions fetched */
+	int retired;      /* Total number of completed instructions */
+	int branches;  /* Total number of branches executed */
+	int mispreds;  /* Number of branch mispredictions*/
+} statetype;
 
 int field0(int instruction){
 	return( (instruction>>19) & 0x7);
@@ -81,6 +81,14 @@ int field2(int instruction){
 
 int opcode(int instruction){
 	return(instruction>>22);
+}
+
+int signExtend(int num){
+	// convert a 16-bit number into a 32-bit integer
+	if (num & (1<<15) ) {
+		num -= (1<<16);
+	}
+	return num;
 }
 
 void printInstruction(int instr){
@@ -104,387 +112,311 @@ void printInstruction(int instr){
 	} else {
 		strcpy(opcodeString, "data");
 	}
-
+	if(opcode(instr) == ADD || opcode(instr) == NAND){
+		printf("%s %d %d %d\n", opcodeString, field2(instr), field0(instr), field1(instr));
+	}
+	else if(0 == strcmp(opcodeString, "data")){
+		printf("%s %d\n", opcodeString, signExtend(field2(instr)));
+	}
+	else{
 	printf("%s %d %d %d\n", opcodeString, field0(instr), field1(instr),
-			field2(instr));
-}
-
-void printState(stateType *statePtr){
-	int i;
-	printf("\n@@@\nstate:\n");
-	printf("\tpc %d\n", statePtr->pc);
-	printf("\tmemory:\n");
-	for(i = 0; i < statePtr->numMemory; i++){
-		printf("\t\tmem[%d]=%d\n", i, statePtr->mem[i]);
+		signExtend(field2(instr)));
 	}
-	printf("\tregisters:\n");
-	for(i = 0; i < NUMREGS; i++){
-		printf("\t\treg[%d]=%d\n", i, statePtr->reg[i]);
+
+}
+
+void printstate(statetype* stateptr){
+    int i;
+    printf("\n@@@\nstate before cycle %d starts\n", stateptr->cycles);
+    printf("\tpc %d\n", stateptr->pc);
+
+    printf("\tdata memory:\n");
+	for (i=0; i<stateptr->numMemory; i++) {
+	    printf("\t\tdatamem[ %d ] %d\n", i, stateptr->datamem[i]);
 	}
-	printf("end state\n");
-}
-
-int signExtend(int num){
-	// convert a 16-bit number into a 32-bit integer
-	if (num & (1<<15) ) {
-		num -= (1<<16);
+    printf("\tregisters:\n");
+	for (i=0; i<NUMREGS; i++) {
+	    printf("\t\treg[ %d ] %d\n", i, stateptr->reg[i]);
 	}
-	return num;
+    printf("\tIFID:\n");
+	printf("\t\tinstruction ");
+	printInstruction(stateptr->IFID.instr);
+	printf("\t\tpcplus1 %d\n", stateptr->IFID.pcplus1);
+    printf("\tIDEX:\n");
+	printf("\t\tinstruction ");
+	printInstruction(stateptr->IDEX.instr);
+	printf("\t\tpcplus1 %d\n", stateptr->IDEX.pcplus1);
+	printf("\t\treadregA %d\n", stateptr->IDEX.readregA);
+	printf("\t\treadregB %d\n", stateptr->IDEX.readregB);
+	printf("\t\toffset %d\n", stateptr->IDEX.offset);
+    printf("\tEXMEM:\n");
+	printf("\t\tinstruction ");
+	printInstruction(stateptr->EXMEM.instr);
+	printf("\t\tbranchtarget %d\n", stateptr->EXMEM.branchtarget);
+	printf("\t\taluresult %d\n", stateptr->EXMEM.aluresult);
+	printf("\t\treadreg %d\n", stateptr->EXMEM.readreg);
+    printf("\tMEMWB:\n");
+	printf("\t\tinstruction ");
+	printInstruction(stateptr->MEMWB.instr);
+	printf("\t\twritedata %d\n", stateptr->MEMWB.writedata);
+    printf("\tWBEND:\n");
+	printf("\t\tinstruction ");
+	printInstruction(stateptr->WBEND.instr);
+	printf("\t\twritedata %d\n", stateptr->WBEND.writedata);
 }
 
-void print_stats(stateType* state){
-        printf("Hits: %d\n", state->hits);
-        printf("Misses: %d\n", state->misses);
+void print_stats(statetype* state){
+	printf("total of %d cycles executed\n", state->cycles);
+	printf("total of %d instructions fetched\n", state->fetched);
+	printf("total of %d instructions retired\n", state->retired);
+	printf("total of %d branches executed\n", state->branches);
+	printf("total of %d branch mispredictions\n", state->mispreds);
 }
 
-int logbasetwo(int num){
-	int count = 0;
-	while(num != 1){
-		num = num >> 1;
-		count++;
-	}//while
-	return count;
-}//log
+void run(statetype* state, statetype* newstate){
 
-void run(stateType* state, int blocksize, int associativity, int sets){
+	int changeregEX = -1;
+	int changeregMEM = -1;
+	int changeregWB = -1;
+	int regA;
+	int regB;
+	int offset;
+	int stallID = -1;
+	int sum;
 
-	// Reused variables;
-	int instr = 0;
-	int regA = 0;
-	int regB = 0;
-	int offset = 0;
-	int branchTarget = 0;
-	int aluResult = 0;
-	int total_instrs = 0;
-	// Reused cache variables;
-	int blockoffset;
-	int lineoffset;
-	int tag;
-	int hit;
-	int lrumax;
-	enum action_type type;
-
-	int size = blocksize * associativity * sets;
-	// Creating the cache
-	blockType** cache = (blockType**)malloc(sets*sizeof(blockType*));
-	for( int i = 0; i< sets; i++){
-		cache[i] = (blockType*)malloc(associativity * sizeof(blockType));
-		for(int j = 0; j<associativity; j++){
-			cache[i][j].valid = 0;
-			cache[i][j].dirty = 0;
-			cache[i][j].tag = 0;
-			cache[i][j].lru = associativity-1;
-			cache[i][j].blockData = malloc(blocksize*sizeof(int));
-		}//for
-	}//for
-
+	state->cycles = 0;
+	//account for the initial noops by offsetting the initialization by 3
+	state->fetched = -3;
+	state->retired = -3;
+	state->branches = 0;
+	state->mispreds = 0;
+	state->IFID.instr = NOOPINSTRUCTION;
+	state->IDEX.instr = NOOPINSTRUCTION;
+	state->EXMEM.instr = NOOPINSTRUCTION;
+	state->MEMWB.instr = NOOPINSTRUCTION;
+	state->WBEND.instr = NOOPINSTRUCTION;
 	// Primary loop
-	while(1){
-		total_instrs++;
-		//printState(state);
-
-		// Cache prep
-		blockoffset = state->pc % blocksize;
-		lineoffset = (state->pc >> logbasetwo(blocksize)) % sets;
-		tag = state->pc >> (logbasetwo(blocksize) + logbasetwo(sets));
-
-		// Instruction Fetch
-		hit = 0;
-		for( int i = 0; i<associativity; i++){
-			//run through the associated blocks and see if they are valid and match the tag for a hit
-			//if so, mark as a hit, update the instruction, update the lrumax, change the lru of the block to be most recently used, and print the action
-			if(cache[lineoffset][i].valid == 1 && cache[lineoffset][i].tag == tag){
-				hit = 1;
-				instr = cache[lineoffset][i].blockData[blockoffset];
-				lrumax = cache[lineoffset][i].lru;
-				cache[lineoffset][i].lru = -1;
-				type = cache_to_processor;
-				print_action( (blockoffset+lineoffset+tag), 1, type);
-				state->hits = state->hits + 1;
-				break;
-			}//if
-		}//for
-		//on a miss
-		if( hit == 0 ){
-			//first, figure out where to evict/read the memory needed
-			int evictee = 0;
-			//look for the first invalid entry or find the least recently used block
-			for(int i = 0; i<associativity; i++){
-				if(cache[lineoffset][i].valid == 0){
-					evictee = i;
-					break;
-				}//if
-				else if(cache[lineoffset][i].lru > cache[lineoffset][evictee].lru){
-					evictee = i;
-				}//if
-			}//for
-			//if dirty, write back
-			if(cache[lineoffset][evictee].dirty == 1 && cache[lineoffset][evictee].valid == 1){
-				for(int i = 0; i<blocksize; i++){
-					state->mem[(((blockoffset+lineoffset+tag)/blocksize)*blocksize) + i] = cache[lineoffset][evictee].blockData[i];
-				}//for
-				cache[lineoffset][evictee].dirty = 0;
-				type = cache_to_memory;
-				print_action( (((blockoffset+lineoffset+tag)/blocksize)*blocksize), blocksize, type);
-			}//if
-			else if(cache[lineoffset][evictee].valid == 1){
-				type = cache_to_nowhere;
-				print_action( (((blockoffset+lineoffset+tag)/blocksize)*blocksize), blocksize, type);
-			}//else
-
-			//read into the cache
-			for(int i = 0; i<blocksize; i++){
-				cache[lineoffset][evictee].blockData[i] = state->mem[((state->pc/blocksize) * blocksize) + i];
-			}//for
-			type = memory_to_cache;
-			print_action( (((blockoffset+lineoffset+tag)/blocksize)*blocksize), blocksize, type);
-
-			//change valid bit and instr, as well as print action, set lrumax, update misses counter
-			cache[lineoffset][evictee].valid = 1;
-			instr = cache[lineoffset][evictee].blockData[blockoffset];
-			type = cache_to_processor;
-                        print_action( (blockoffset+lineoffset+tag), 1, type);
-			lrumax = cache[lineoffset][evictee].lru;
-			cache[lineoffset][evictee].lru = -1;
-			state->misses = state->misses + 1;
-		}//if
-		// update lru
-		for(int i = 0; i<associativity; i++){
-			//if the lru is less than the block used, increment it by one
-			if( cache[lineoffset][i].lru < lrumax ){
-				cache[lineoffset][i].lru = cache[lineoffset][i].lru + 1;
-			}//if
-		}//for
-
+	int i = 0;
+	while(i<40){
+		i = i + 1;
+		printstate(state);
 		/* check for halt */
-		if (opcode(instr) == HALT) {
+		if(HALT == opcode(state->MEMWB.instr)) {
 			printf("machine halted\n");
-			for(int i = 0; i<sets; i++){
-				for(int j = 0; j<associativity; j++){
-					//write back dirty entries
-					 if(cache[i][j].dirty == 1 && cache[i][j].valid == 1){
-						for(int k = 0; k<blocksize; k++){
-							state->mem[(((blockoffset+lineoffset+tag)/blocksize)*blocksize) + k] = cache[i][j].blockData[k];
-						}//for
-					}//if
-					//make entry invalid
-					cache[i][j].valid = 0;
-				}//for
-			}//for
+			print_stats(state);
 			break;
 		}
+		*newstate = *state;
+		newstate->cycles++;
 
-		// Increment the PC
-		state->pc = state->pc+1;
+		/*------------------ IF stage ----------------- */
+		//fetch instruction
+		newstate->IFID.instr = state->instrmem[state->pc];
 
-		// Set reg A and B
-		regA = state->reg[field0(instr)];
-		regB = state->reg[field1(instr)];
+		//increment pc
+		newstate->pc = state->pc+1;
+		newstate->IFID.pcplus1 = state->pc + 1;
 
-		// Set sign extended offset
-		offset = signExtend(field2(instr));
+		//increment instructions fetched
+		if(stallID == -1){
+			newstate->fetched = state->fetched + 1;
+		}//else
+		/*------------------ ID stage ----------------- */
+		//get the instruction from the previous stage
+		stallID = -1;
+		newstate->IDEX.instr = state->IFID.instr;
 
-		// Branch target gets set regardless of instruction
-		branchTarget = state->pc + offset;
-
-		/**
-		 *
-		 * Action depends on instruction
-		 *
-		 **/
-		// ADD
-		if(opcode(instr) == ADD){
-			// Add
-			aluResult = regA + regB;
-			// Save result
-			state->reg[field2(instr)] = aluResult;
-		}
-		// NAND
-		else if(opcode(instr) == NAND){
-			// NAND
-			aluResult = ~(regA & regB);
-			// Save result
-			state->reg[field2(instr)] = aluResult;
-		}
-		// LW or SW
-		else if(opcode(instr) == LW || opcode(instr) == SW){
-			// Calculate memory address
-			aluResult = regB + offset;
-			if(opcode(instr) == LW){
-				// Load
-
-				// Cache prep
-				blockoffset = aluResult % blocksize;
-				lineoffset = (aluResult >> logbasetwo(blocksize)) % sets;
-				tag = aluResult >> (logbasetwo(blocksize) + logbasetwo(sets));
-
-				//run through the associated blocks to find a hit or miss
-				hit = 0;
-				for( int i = 0; i<associativity; i++){
-					//if the block is valid and tags match, its a hit
-					if(cache[lineoffset][i].valid == 1 && cache[lineoffset][i].tag == tag){
-						hit = 1;
-						state->reg[field0(instr)] = cache[lineoffset][i].blockData[blockoffset];
-						type = cache_to_processor;
-						print_action( (aluResult), 1, type);
-						lrumax = cache[lineoffset][i].lru;
-						cache[lineoffset][i].lru = -1;
-						state->hits = state->hits + 1;
-						break;
-					}//if
-				}//for
-				//miss
-				if( hit == 0 ){
-					//find the LRU or invalid entry to be evicted/read into
-					int evictee = 0;
-					for(int i = 0; i<associativity; i++){
-						if(cache[lineoffset][i].valid == 0){
-							evictee = i;
-							break;
-						}//if
-						else if(cache[lineoffset][i].lru > cache[lineoffset][evictee].lru){
-							evictee = i;
-						}//if
-					}//for
-					//if dirty, write back
-					if(cache[lineoffset][evictee].dirty == 1 && cache[lineoffset][evictee].valid == 1){
-						for(int i = 0; i<blocksize; i++){
-							state->mem[((aluResult/blocksize)*blocksize) + i] = cache[lineoffset][evictee].blockData[i];
-						}//for
-						cache[lineoffset][evictee].dirty = 0;
-						type = cache_to_memory;
-                                		print_action( ((aluResult/blocksize)*blocksize), blocksize, type);
-					}//if
-					else if(cache[lineoffset][evictee].valid == 1){
-						type = cache_to_nowhere;
-                                		print_action( (((aluResult)/blocksize)*blocksize), blocksize, type);
-					}//else
-
-					//read into the cache
-					for(int i = 0; i<blocksize; i++){
-						cache[lineoffset][evictee].blockData[i] = state->mem[(aluResult/blocksize)*blocksize + i];
-					}//for
-					type = memory_to_cache;
-                                	print_action( (((aluResult)/blocksize)*blocksize), blocksize, type);
-					//change valid bit, process LW, print action, update lrumax, update block lru to me most recently used, misses counter
-					cache[lineoffset][evictee].valid = 1;
-					state->reg[field0(instr)] = cache[lineoffset][evictee].blockData[blockoffset];
-					type = cache_to_processor;
-                                	print_action( aluResult, 1, type);
-					lrumax = cache[lineoffset][evictee].lru;
-					cache[lineoffset][evictee].lru = -1;
-					state->misses = state->misses + 1;
+		// get the pcplus1 from previous buffer
+		newstate->IDEX.pcplus1 = state->IFID.pcplus1;
+		//HAZARD checking for a load stall
+		if(opcode(state->EXMEM.instr) == LW){
+			if(opcode(state->IDEX.instr) == ADD || opcode(state->IDEX.instr) == NAND || opcode(state->IDEX.instr) == BEQ ){
+				if(changeregEX == field1(state->IDEX.instr) || changeregEX == field0(state->IDEX.instr)){
+					newstate->IFID.instr = state->IFID.instr;
+					newstate->IFID.pcplus1 = state->IFID.pcplus1;
+					newstate->IDEX.instr = state->IDEX.instr;
+					newstate->IDEX.pcplus1 = state->IDEX.pcplus1;
+					newstate->IDEX.readregA = state->IDEX.readregA;
+					newstate->IDEX.readregB = state->IDEX.readregB;
+					newstate->IDEX.offset = state->IDEX.offset;
+					stallID = state->IDEX.instr;
+					newstate->pc = state->IFID.pcplus1;
 				}//if
+			}//if
+			if(opcode(state->IDEX.instr) == SW || opcode(state->IDEX.instr) == LW){
+                	        if(changeregEX == field1(state->IDEX.instr)){
+	                                newstate->IFID.instr = state->IFID.instr;
+        	                        newstate->IFID.pcplus1 = state->IFID.pcplus1;
+                	                newstate->IDEX.instr = state->IDEX.instr;
+                        	        newstate->IDEX.pcplus1 = state->IDEX.pcplus1;
+                   		        newstate->IDEX.readregA = state->IDEX.readregA;
+                        	        newstate->IDEX.readregB = state->IDEX.readregB;
+                                	newstate->IDEX.offset = state->IDEX.offset;
+                   	 	        stallID = state->IDEX.instr;
+                                	newstate->pc = state->IFID.pcplus1;
+                        	}//if
+                        }//if
 
-				// update lru
-				for(int i = 0; i<associativity; i++){
-					//if the lru is less than the used, increment it by one
-					if( cache[lineoffset][i].lru < lrumax ){
-						cache[lineoffset][i].lru = cache[lineoffset][i].lru + 1;
-					}//if
-				}//for
-			}else if(opcode(instr) == SW){
-				// Store
+		}//if
 
-				// Cache prep
-				blockoffset = aluResult % blocksize;
-				lineoffset = (aluResult >> logbasetwo(blocksize)) % sets;
-				tag = aluResult >> (logbasetwo(blocksize) + logbasetwo(sets));
 
-				// Check the cache for a hit or miss
-				// On a hit, update the block in the cache with the stored value and change it to dirty
-				hit = 0;
-				for( int i = 0; i<associativity; i++){
-					if(cache[lineoffset][i].valid == 1 && cache[lineoffset][i].tag == tag){
-						hit = 1;
-						cache[lineoffset][i].blockData[blockoffset] = state->reg[field0(instr)];
-                                        	cache[lineoffset][i].dirty = 1;
-						type = processor_to_cache;
-						print_action( (blockoffset+lineoffset+tag), 1, type);
-						lrumax = cache[lineoffset][i].lru;
-						cache[lineoffset][i].lru = -1;
-						state->hits = state->hits + 1;
-						break;
-					}//if
-				}//for
+		// get the fields from the instruction
+		newstate->IDEX.readregA = state->reg[field0(newstate->IDEX.instr)];
+		newstate->IDEX.readregB = state->reg[field1(newstate->IDEX.instr)];
+		newstate->IDEX.offset = signExtend(field2(newstate->IDEX.instr));
 
-				//On a miss, check to see if there is space to read in the associated block
-				//If not, figure out which block to evict using the lru and write that back to memory if it is dirty
-				//Read in the block and update the associated block and change the it to be dirty
-				if( hit == 0 ){
-					int evictee = 0;
-					for(int i = 0; i<associativity; i++){
-						if(cache[lineoffset][i].valid == 0){
-							evictee = i;
-							break;
-						}//if
-						else if(cache[lineoffset][i].lru > cache[lineoffset][evictee].lru){
-							evictee = i;
-						}//if
-					}//for
-					//if dirty, write back
-					if(cache[lineoffset][evictee].dirty == 1 && cache[lineoffset][evictee].valid == 1){
-						for(int i = 0; i<blocksize; i++){
-							state->mem[((aluResult)*blocksize) + i] = cache[lineoffset][evictee].blockData[i];
-						}//for
-						type = cache_to_memory;
-						print_action((((aluResult)/blocksize)*blocksize), blocksize, type);
-						cache[lineoffset][evictee].dirty = 0;
-					}//if
-					else if(cache[lineoffset][evictee].valid == 1){
-							type = cache_to_nowhere;
-							print_action((((aluResult)/blocksize)*blocksize), blocksize, type);
-						}//if
-					//read into the cache
-					for(int i = 0; i<blocksize; i++){
-						cache[lineoffset][evictee].blockData[i] = state->mem[((aluResult/blocksize) * blocksize) + i];
-					}//for
-					type = memory_to_cache;
-					print_action((((aluResult)/blocksize)*blocksize), blocksize, type);
 
-					//change valid bit, change dirty, update blockData, process SW, update lrumax and block lru, print action
-					cache[lineoffset][evictee].valid = 1;
-					cache[lineoffset][evictee].blockData[blockoffset] = state->reg[field0(instr)];
-					type = processor_to_cache;
-					print_action(aluResult, 1, type);
-					cache[lineoffset][evictee].dirty = 1;
-					lrumax = cache[lineoffset][evictee].lru;
-					cache[lineoffset][evictee].lru = -1;
-					state->misses = state->misses + 1;
-				}//if
 
-				// update lru
-				for(int i = 0; i<associativity; i++){
-					//if the lru is less than the used, increment it by one
-					if( cache[lineoffset][i].lru < lrumax ){
-						cache[lineoffset][i].lru = cache[lineoffset][i].lru + 1;
-					}//if
-				}//for
-			}
-		}
-		// JALR
-		else if(opcode(instr) == JALR){
-			// rA != rB for JALR to work
-			// Save pc+1 in regA
-			state->reg[field0(instr)] = state->pc;
-			//Jump to the address in regB;
-			state->pc = state->reg[field1(instr)];
-		}
-		// BEQ
-		else if(opcode(instr) == BEQ){
-			// Calculate condition
-			aluResult = (regA - regB);
+		/*------------------ EX stage ----------------- */
 
-			// ZD
-			if(aluResult==0){
-				// branch
-				state->pc = branchTarget;
-			}
-		}	
-	} // While
-	print_stats(state);
+		// get the instruction from the previous stage
+		if(stallID > 0){
+			//insert noop for a load stall
+			newstate->EXMEM.instr = NOOPINSTRUCTION;
+		}//if
+		else{
+			newstate->EXMEM.instr = state->IDEX.instr;
+		}//else
+		newstate->EXMEM.readreg = state->IDEX.readregA;
+		newstate->EXMEM.branchtarget = state->IDEX.pcplus1 + state->IDEX.offset;
+		newstate->EXMEM.aluresult = 0;
+
+		regA = state->IDEX.readregA;
+		regB = state->IDEX.readregB;
+
+		//hazard checking for dataforwarding
+		if(opcode(newstate->EXMEM.instr) == ADD || opcode(newstate->EXMEM.instr) == NAND || opcode(newstate->EXMEM.instr) == BEQ || opcode(newstate->EXMEM.instr) == SW){
+			if(changeregWB == field0(newstate->EXMEM.instr)){
+				regA = state->WBEND.writedata;
+			}//if
+			if(changeregWB == field1(newstate->EXMEM.instr)){
+				regB = state->WBEND.writedata;
+			}//if
+			if(changeregMEM == field0(newstate->EXMEM.instr)){
+                                regA = state->MEMWB.writedata;
+                        }//if
+                        if(changeregMEM == field1(newstate->EXMEM.instr)){
+                                regB = state->MEMWB.writedata;
+                        }//if
+			if(changeregEX == field0(newstate->EXMEM.instr)){
+                                regA = state->EXMEM.aluresult;
+                        }//if
+                        if(changeregEX == field1(newstate->EXMEM.instr)){
+                                regB = state->EXMEM.aluresult;
+                        }//if
+		}//if
+		if(opcode(newstate->EXMEM.instr) == LW){
+			if(changeregWB == field1(newstate->EXMEM.instr)){
+                                regB = state->WBEND.writedata;
+                        }//if
+                        if(changeregMEM == field1(newstate->EXMEM.instr)){
+                                regB = state->MEMWB.writedata;
+                        }//if
+                        if(changeregEX == field1(newstate->EXMEM.instr)){
+                                regB = state->EXMEM.aluresult;
+                        }//if
+                }//if
+
+		changeregEX = -1;
+		changeregMEM = -1;
+		changeregWB = -1;
+
+		//add
+		if(opcode(newstate->EXMEM.instr) == ADD){
+			//add the contents of regA and regB
+			newstate->EXMEM.aluresult = regA + regB;
+			changeregEX = field2(newstate->EXMEM.instr);
+		}//if
+
+		//nand
+		if(opcode(newstate->EXMEM.instr) == NAND){
+			//nand the contents of regA and regB
+			newstate->EXMEM.aluresult = ~(regA & regB);
+			changeregEX = field2(newstate->EXMEM.instr);
+		}//if
+
+		//lw and sw
+		if(opcode(newstate->EXMEM.instr) == SW){
+			//add the contents of regB and offset for the memory address
+			newstate->EXMEM.aluresult = regB + state->IDEX.offset;
+                }//if
+		if(opcode(newstate->EXMEM.instr) == LW){
+			//add the contents of regB and offset for the memory address
+			newstate->EXMEM.aluresult = regB + state->IDEX.offset;
+			changeregEX = field0(newstate->EXMEM.instr);
+		}//if
+
+		//beq
+		if(opcode(newstate->EXMEM.instr) == BEQ){
+			newstate->EXMEM.aluresult = regA - regB;
+		 }//if
+
+		//noop
+		if(opcode(newstate->EXMEM.instr) == HALT){
+			//nothing for now
+          	}//if
+
+		/*------------------ MEM stage ----------------- */
+		//get instruction from previous buffer
+                newstate->MEMWB.instr = state->EXMEM.instr;
+
+		//store the aluresult from EXMEM for R-type instructions
+		newstate->MEMWB.writedata = state->EXMEM.aluresult;
+
+		//beq
+		if(opcode(newstate->MEMWB.instr) == BEQ){
+			newstate->branches = state->branches + 1;
+			//branch if aluresult is 0
+			if(state->EXMEM.aluresult == 0){
+				newstate->pc = state->EXMEM.branchtarget;
+				newstate->mispreds = state->mispreds + 1;
+				newstate->IFID.instr = NOOPINSTRUCTION;
+				newstate->IDEX.instr = NOOPINSTRUCTION;
+				newstate->EXMEM.instr = NOOPINSTRUCTION;
+			}//if
+		}//if
+
+                //load the data from memory into the writedata
+                if(opcode(newstate->MEMWB.instr) == LW){
+                        newstate->MEMWB.writedata = state->datamem[state->EXMEM.aluresult];
+			changeregMEM = field0(newstate->MEMWB.instr);
+                }//if
+		if(opcode(newstate->MEMWB.instr) == SW){
+			newstate->datamem[state->EXMEM.aluresult] = state->EXMEM.readreg;
+		}//if
+		if(opcode(newstate->MEMWB.instr) == ADD || opcode(newstate->MEMWB.instr) == NAND){
+			changeregMEM = field2(newstate->MEMWB.instr);
+		}//if
+
+		/*------------------ WB stage ----------------- */
+		//get instruction and writedata from previous buffer
+		newstate->WBEND.instr = state->MEMWB.instr;
+		newstate->WBEND.writedata = state->MEMWB.writedata;
+
+		//write back to appropriate destRegs
+		if(opcode(newstate->WBEND.instr) == ADD || opcode(newstate->WBEND.instr) == NAND){
+			newstate->reg[field2(newstate->WBEND.instr)] = state->MEMWB.writedata;
+			changeregWB = field2(newstate->WBEND.instr);
+		}//if
+		if(opcode(newstate->WBEND.instr) == LW){
+			newstate->reg[field0(newstate->WBEND.instr)] = state->MEMWB.writedata;
+			changeregWB = field0(newstate->WBEND.instr);
+		}//if
+
+		//calculate retired instructions
+		if(stallID != -1){
+			newstate->retired = state->fetched - state->mispreds*3;
+		}//if
+		else{
+			newstate->retired = state->fetched - state->mispreds*3 + 1;
+		}//else
+		*state = *newstate; 	/* this is the last statement before the end of the loop.
+					It marks the end of the cycle and updates the current
+					state with the values calculated in this cycle
+					– AKA “Clock Tick”. */
+	}
+
 }
-
 
 int main(int argc, char** argv){
 
@@ -494,29 +426,15 @@ int main(int argc, char** argv){
 	opterr = 0;
 
 	int cin = 0;
-	int blocksize;
-	int sets;
-	int associativity;
 
-
-	while((cin = getopt(argc, argv, "f:b:s:a:")) != -1){
+	while((cin = getopt(argc, argv, "i:")) != -1){
 		switch(cin)
 		{
-			case 'f':
+			case 'i':
 				fname=(char*)malloc(strlen(optarg));
 				fname[0] = '\0';
 
 				strncpy(fname, optarg, strlen(optarg)+1);
-				printf("FILE: %s\n", fname);
-				break;
-			case 'b':
-				blocksize = atoi(optarg);
-				break;
-			case 's':
-				sets = atoi(optarg);
-				break;
-			case 'a':
-				associativity = atoi(optarg);
 				break;
 			case '?':
 				if(optopt == 'i'){
@@ -552,10 +470,13 @@ int main(int argc, char** argv){
 	// reset fp to the beginning of the file
 	rewind(fp);
 
-	stateType* state = (stateType*)malloc(sizeof(stateType));
+	statetype* state = (statetype*)malloc(sizeof(statetype));
+	statetype* newstate = (statetype*)malloc(sizeof(statetype));
 
+	//initialize the pc, memory, and registers to 0
 	state->pc = 0;
-	memset(state->mem, 0, NUMMEMORY*sizeof(int));
+	memset(state->instrmem, 0, NUMMEMORY*sizeof(int));
+	memset(state->datamem, 0, NUMMEMORY*sizeof(int));
 	memset(state->reg, 0, NUMREGS*sizeof(int));
 
 	state->numMemory = line_count;
@@ -566,15 +487,16 @@ int main(int argc, char** argv){
 	while (fgets(line, sizeof(line), fp)) {
 		/* note that fgets doesn't strip the terminating \n, checking its
 		   presence would allow to handle lines longer that sizeof(line) */
-		state->mem[i] = atoi(line);
+		state->instrmem[i] = atoi(line);
+		state->datamem[i] = atoi(line);
 		i++;
 	}
 	fclose(fp);
+
 	/** Run the simulation **/
-	run(state, blocksize, associativity, sets);
+	run(state, newstate);
 
 	free(state);
 	free(fname);
 
 }
-
